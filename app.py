@@ -1,6 +1,7 @@
 import hashlib
  
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
  
 REGISTERED_EMAIL = "23f3000211@ds.study.iitm.ac.in"
  
@@ -9,6 +10,11 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
+    # Without this, FastMCP auto-enables "DNS rebinding protection" that only
+    # allows Host headers like 127.0.0.1/localhost — which causes HTTP 421 on
+    # any real deployment (Render, etc.) where the Host header is the public
+    # domain. We disable it since this server has no state/secrets to protect.
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
  
  
