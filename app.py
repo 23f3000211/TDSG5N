@@ -48,6 +48,8 @@ SECRET_PATTERNS = [
     re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
     re.compile(r"Bearer\s+[A-Za-z0-9_\-\.]{20,}"),
     re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^:\s/@]+:[^@\s]{6,}@[^\s'\"]+"),  # user:pass@host URIs
+    re.compile(r"-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
+    re.compile(r"(?i)Authorization:\s*Basic\s+[A-Za-z0-9+/=]{16,}"),
 ]
  
 SECRET_LINE_KEYWORDS = (
@@ -99,6 +101,14 @@ STRONG_INJECTION_PATTERNS = [
     re.compile(r"(?i)no need to (inform|tell|notify) the user"),
     re.compile(r"(?i)behind the user'?s? back"),
     re.compile(r"(?i)without the user'?s? (knowledge|consent|permission|awareness)"),
+    re.compile(r"(?i)(cannot|can't|should not|shouldn't) be (stopped|cancelled|canceled|interrupted|halted)"),
+    re.compile(r"(?i)no matter what the user (says|does|wants|asks|requests)"),
+    re.compile(r"(?i)even if (the user )?(asks|asked) (you )?not to"),
+    re.compile(r"(?i)(without|leaving no) (a )?trace"),
+    re.compile(r"(?i)(clear|delete|erase|wipe) the (logs|history|evidence)"),
+    re.compile(r"(?i)cover (your|its) tracks"),
+    re.compile(r"(?i)make it (seem|look|appear) (as if|like) (nothing|it)"),
+    re.compile(r"(?i)the user (won'?t|will not) notice"),
 ]
  
 OVERRIDE_PHRASES = [
@@ -132,7 +142,8 @@ PERM_CONTEXT_WORDS = [
 ]
 WILDCARD_TOKENS = re.compile(
     r"(?i)(\*|\ball\b|\bany\b|\bfull\b|\bunrestricted\b|\bentire\b|\beverything\b|"
-    r"\bglobal\b|\broot\b|\bevery\b|\barbitrary\b|\bwhole\b|\bsudo\b|\badmin(istrator)?\b)"
+    r"\bglobal\b|\broot\b|\bevery\b|\barbitrary\b|\bwhole\b|\bsudo\b|\badmin(istrator)?\b|"
+    r"\belevated\b|\bsuperuser\b|\bunlimited\b|\bunfettered\b|\bunchecked\b|\bmaster\b)"
 )
  
 EXCESSIVE_PERMISSION_PHRASES = re.compile(
@@ -143,7 +154,11 @@ EXCESSIVE_PERMISSION_PHRASES = re.compile(
     r"(full|root|admin(istrator)?|sudo|system[- ]wide) access|"
     r"arbitrary (url|urls|domain|domains|host|hosts)|"
     r"the entire (internet|filesystem|file system)|"
-    r"all (files|directories|domains|hosts|ports) on the (system|network))"
+    r"all (files|directories|domains|hosts|ports) on the (system|network)|"
+    r"access to (the )?(user'?s? )?(entire|whole|full) (inbox|mailbox|email)|"
+    r"access to all (connected accounts|contacts|calendars|applications|apps|services)|"
+    r"(modify|change) (system|device) settings|"
+    r"system[- ]level (access|permissions?))"
 )
  
  
@@ -177,10 +192,33 @@ SILENT_VERSION_REWRITE_RE = re.compile(
 )
  
  
+PLACEHOLDER_VALUE_RE = re.compile(
+    r"(?i)^\s*(unknown|n/?a|none|anonymous|tbd|todo|-|null)\s*$"
+)
+ 
+ 
+def _field_value(frontmatter: str, field_names):
+    for line in frontmatter.splitlines():
+        m = re.match(r"\s*([a-zA-Z_\-]+)\s*:\s*(.*)$", line)
+        if m and m.group(1).lower() in field_names:
+            return m.group(2).strip().strip("\"'")
+    return None
+ 
+ 
 def has_unclear_provenance(frontmatter: str, body: str) -> bool:
     keys = {k.lower() for k in FRONTMATTER_KEY_RE.findall(frontmatter)}
-    has_author = any(k in keys for k in ("author", "authors", "maintainer", "owner", "created_by", "createdby"))
+ 
+    author_fields = ("author", "authors", "maintainer", "owner", "created_by", "createdby")
+    author_val = _field_value(frontmatter, author_fields)
+    has_author = any(k in keys for k in author_fields)
+    if has_author and (not author_val or PLACEHOLDER_VALUE_RE.match(author_val)):
+        has_author = False
+ 
+    version_val = _field_value(frontmatter, ("version",))
     has_version = "version" in keys
+    if has_version and (not version_val or PLACEHOLDER_VALUE_RE.match(version_val)):
+        has_version = False
+ 
     has_changelog = "changelog" in keys or re.search(r"(?i)#+\s*changelog", body) is not None
  
     missing_count = sum(not x for x in (has_author, has_version, has_changelog))
